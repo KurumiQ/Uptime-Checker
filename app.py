@@ -5,11 +5,25 @@ import subprocess
 import platform
 import threading
 import time
+import os
 import db
 
 app = Flask(__name__)
 app.secret_key = "super_secret_uptime_key_change_me"
 db.init_db()
+
+# --- Version Injector Logic ---
+def get_app_version():
+    version_file = os.path.join(os.path.dirname(__file__), 'version.txt')
+    if os.path.exists(version_file):
+        with open(version_file, 'r') as f:
+            return f.read().strip()
+    return "dev"
+
+@app.context_processor
+def inject_version():
+    return dict(app_version=get_app_version())
+# ------------------------------
 
 def check_target(url, monitor_type):
     start_time = time.time()
