@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  uptime-monitor:
+    build: .
+    container_name: uptime-monitor-app
+    restart: always
+    ports:
+      - "5000:5000"
+    volumes:
+      - monitor_data:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  monitor_data:

@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Advanced Uptime Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1100px; margin: 40px auto; padding: 20px; background: #121212; color: #e0e0e0; }
+        .header-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        h1 { color: #ffffff; margin: 0; }
+        
+        .header-actions { display: flex; gap: 10px; align-items: center; }
+        .btn-open-modal { background: #4CAF50; color: white; border: none; padding: 10px 18px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        .btn-open-modal:hover { background: #45a049; }
+        .btn-users { background: #9c27b0; color: white; border: none; padding: 10px 16px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        .btn-users:hover { background: #7b1fa2; }
+        .btn-status-pages { background: #00bcd4; color: white; border: none; padding: 10px 16px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        .btn-status-pages:hover { background: #00acc1; }
+        .btn-logout { background: #333; color: #aaa; border: 1px solid #555; padding: 8px 14px; font-size: 13px; border-radius: 6px; cursor: pointer; text-decoration: none; }
+        .btn-logout:hover { background: #444; color: #fff; }
+
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: #1e1e1e; padding: 25px; border-radius: 10px; width: 440px; box-shadow: 0 8px 16px rgba(0,0,0,0.5); position: relative; border: 1px solid #333; }
+        
+        .modal-wide { width: 1150px; max-width: 95vw; max-height: 90vh; display: flex; gap: 25px; box-sizing: border-box; overflow-y: auto; }
+        .modal-col-left { flex: 0.9; border-right: 1px solid #333; padding-right: 20px; }
+        .modal-col-right { flex: 1.5; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        .modal-close { position: absolute; top: 12px; right: 15px; font-size: 22px; color: #aaa; cursor: pointer; background: none; border: none; z-index: 10; }
+        .modal-close:hover { color: #fff; }
+
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; margin-bottom: 4px; font-size: 13px; color: #aaa; font-weight: bold; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 9px; border-radius: 4px; border: 1px solid #444; background: #2a2a2a; color: #fff; font-size: 14px; box-sizing: border-box; }
+        .form-group input:disabled, .form-group select:disabled, .form-group textarea:disabled { background: #1a1a1a; color: #777; border-color: #2a2a2a; }
+        textarea { resize: vertical; height: 50px; }
+
+        .char-counter { font-size: 11px; color: #777; text-align: right; margin-top: 2px; }
+
+        .btn-submit { padding: 9px 18px; background: #2196F3; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; }
+        .btn-edit-toggle { background: #ff9800; color: white; border: none; padding: 6px 12px; font-size: 12px; font-weight: bold; border-radius: 4px; cursor: pointer; }
+
+        .group-header { background: #252525; padding: 12px 15px; font-weight: bold; color: #90caf9; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-radius: 6px; margin-top: 15px; border: 1px solid #333; }
+        .group-header:hover { background: #2a2a2a; }
+        
+        .card { background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 5px; margin-bottom: 15px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; font-size: 14px; vertical-align: middle; }
+        th { background: #1a1a1a; color: #aaa; }
+        
+        .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-family: monospace; font-size: 11px; text-transform: uppercase; }
+        .badge-type { background: #333; color: #ccc; margin-right: 5px; }
+        .badge-up { background: #1b3a20; color: #81c784; }
+        .badge-warn { background: #3a2e1b; color: #ffb74d; }
+        .badge-down { background: #3a1b1b; color: #e57373; }
+
+        .monitor-name-link { color: #64b5f6; text-decoration: none; font-weight: bold; font-size: 15px; cursor: pointer; }
+        .monitor-name-link:hover { text-decoration: underline; color: #90caf9; }
+
+        .pulse-bars { display: flex; gap: 3px; align-items: center; height: 18px; }
+        .bar { width: 6px; height: 16px; border-radius: 2px; cursor: pointer; position: relative; }
+        .bar-badge-up { background-color: #4CAF50; }
+        .bar-badge-warn { background-color: #ff9800; }
+        .bar-badge-down { background-color: #f44336; }
+
+        .btn-delete { background: #f44336; padding: 5px 10px; font-size: 13px; text-decoration: none; border-radius: 4px; color: white; }
+        .btn-edit-user { background: #2196F3; padding: 5px 10px; font-size: 13px; border: none; border-radius: 4px; color: white; cursor: pointer; margin-right: 4px; }
+        
+        .tf-menu { display: flex; gap: 4px; }
+        .tf-btn { padding: 4px 10px; background: #2a2a2a; color: #aaa; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; }
+        .tf-btn.active { background: #2196F3; color: white; border-color: #2196F3; }
+        .tf-btn:hover { background: #333; color: white; }
+
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 15px; background: #252525; padding: 14px; border-radius: 6px; border: 1px solid #333; }
+        .stat-item { font-size: 12px; color: #aaa; }
+        .stat-value { font-size: 15px; font-weight: bold; color: #fff; margin-top: 3px; }
+
+        .live-indicator { font-size: 12px; color: #4CAF50; display: flex; align-items: center; gap: 6px; }
+        .dot { width: 8px; height: 8px; background: #4CAF50; border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div class="header-container">
+        <div>
+            <h1>🚀 Active Uptime Monitor</h1>
+            <div class="live-indicator" style="margin-top: 5px;"><div class="dot"></div> RBAC & Status Pages Active</div>
+        </div>
+        <div class="header-actions">
+            <button class="btn-status-pages" onclick="openStatusPageModal()">📊 Status Pages</button>
+            <button class="btn-users" onclick="openUserModal()">👤 Manage Users</button>
+            <button class="btn-open-modal" onclick="openAddModal()">＋ Add New Monitor</button>
+            <a href="/logout" class="btn-logout">Logout</a>
+        </div>
+    </div>
+
+    <!-- Status Pages Management Modal -->
+    <div class="modal-overlay" id="statusPageModal">
+        <div class="modal-content" style="position: relative; width: 520px;">
+            <button class="modal-close" onclick="closeStatusPageModal()">&times;</button>
+            <h3 style="margin-top: 0; color: #fff;">Status Pages Management</h3>
+            
+            <form action="/status-page/add" method="POST" style="margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 15px;">
+                <div class="form-group">
+                    <label>Page Title</label>
+                    <input type="text" name="title" placeholder="e.g. Company Public Status" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Slug URL (/status/&lt;slug&gt;)</label>
+                    <input type="text" name="slug" placeholder="e.g. main-services" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Description (Sub-text)</label>
+                    <textarea name="description" placeholder="Brief description..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Custom CSS</label>
+                    <textarea name="custom_css" placeholder="e.g. body { background: #111; }"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Select Monitors to Include</label>
+                    <div style="max-height: 120px; overflow-y: auto; background: #2a2a2a; border: 1px solid #444; padding: 8px; border-radius: 4px;">
+                        {% for site in all_sites %}
+                        <label style="display: block; font-size: 13px; color: #ddd; margin-bottom: 4px; cursor: pointer;">
+                            <input type="checkbox" name="monitor_ids" value="{{ site.id }}"> {{ site.name }} ({{ site.group_name }})
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <button type="submit" class="btn-submit" style="width: 100%; background: #00bcd4;">Create Status Page</button>
+            </form>
+
+            <h4 style="color: #fff; margin-bottom: 8px;">Existing Status Pages</h4>
+            <div style="max-height: 160px; overflow-y: auto;">
+                <table style="margin-top: 0;">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Public Link</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sp in status_pages %}
+                        <tr>
+                            <td><strong>{{ sp.title }}</strong></td>
+                            <td><a href="/status/{{ sp.slug }}" target="_blank" style="color: #64b5f6;">/status/{{ sp.slug }}</a></td>
+                            <td><a href="/status-page/delete/{{ sp.id }}" class="btn-delete" onclick="return confirm('Delete status page {{ sp.title }}?');">Delete</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Management Modal (Supports Create & Edit) -->
+    <div class="modal-overlay" id="userModal">
+        <div class="modal-content" style="position: relative; width: 500px;">
+            <button class="modal-close" onclick="closeUserModal()">&times;</button>
+            <h3 style="margin-top: 0; color: #fff;" id="userModalTitle">Create New User</h3>
+            
+            <form id="userForm" action="/user/add" method="POST" style="margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 15px;">
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" name="username" id="userUsername" placeholder="Username" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Password <span id="pwdHint" style="font-size: 11px; color: #888;"></span></label>
+                    <input type="password" name="password" id="userPassword" placeholder="Password">
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select name="role" id="userRole">
+                        <option value="user">User (Restricted to assigned status page)</option>
+                        <option value="editor">Editor (Can manage monitors)</option>
+                        <option value="admin">Admin (Full Control)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Assign Status Page (For 'User' role)</label>
+                    <select name="status_page_id" id="userStatusPageId">
+                        <option value="">-- None --</option>
+                        {% for sp in status_pages %}
+                        <option value="{{ sp.id }}">{{ sp.title }} (/status/{{ sp.slug }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn-submit" id="userSubmitBtn" style="width: 100%; background: #9c27b0;">Create User</button>
+                    <button type="button" id="userCancelBtn" class="btn-submit" style="width: 40%; background: #555; display: none;" onclick="resetUserForm()">Cancel</button>
+                </div>
+            </form>
+
+            <h4 style="color: #fff; margin-bottom: 8px;">Existing Users</h4>
+            <div style="max-height: 160px; overflow-y: auto;">
+                <table style="margin-top: 0;">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Status Page</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in users %}
+                        <tr>
+                            <td><strong>{{ u.username }}</strong></td>
+                            <td>{{ u.role | capitalize }}</td>
+                            <td style="font-size: 12px; color: #aaa;">{{ u.status_page_title or 'None' }}</td>
+                            <td>
+                                <button class="btn-edit-user" onclick="editUser('{{ u.id }}', '{{ u.username }}', '{{ u.role }}', '{{ u.status_page_id or '' }}')">Edit</button>
+                                {% if u.role != 'admin' %}
+                                <a href="/user/delete/{{ u.id }}" class="btn-delete" onclick="return confirm('Delete user {{ u.username }}?');">Delete</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add New Monitor Modal -->
+    <div class="modal-overlay" id="addModal">
+        <div class="modal-content" style="position: relative;">
+            <button class="modal-close" onclick="closeAddModal()">&times;</button>
+            <h3 style="margin-top: 0; color: #fff;">Add New Monitor</h3>
+            <form action="/add" method="POST">
+                <div class="form-group">
+                    <label>Monitor Name</label>
+                    <input type="text" name="name" placeholder="e.g. Google Server" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Group</label>
+                    <input type="text" name="group_name" list="groupSuggestions" placeholder="e.g. sites or servers" autocomplete="off" required>
+                    <datalist id="groupSuggestions">
+                        {% for g in groups %}
+                            <option value="{{ g }}">
+                        {% endfor %}
+                    </datalist>
+                </div>
+                <div class="form-group">
+                    <label>Monitor Type</label>
+                    <select name="monitor_type" id="addTypeSelect" onchange="handleTypeChangeAdd()">
+                        <option value="https" selected>HTTPS Website</option>
+                        <option value="http">HTTP Website</option>
+                        <option value="ping">Ping (ICMP)</option>
+                        <option value="tcp">TCP Port Check</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Target Address / URL / IP</label>
+                    <input type="text" name="url" id="addUrlInput" value="https://" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Check Interval (seconds)</label>
+                    <input type="number" name="interval" value="20" min="5" max="86400" required>
+                </div>
+                <div class="form-group">
+                    <label>Notes (max 100 chars)</label>
+                    <textarea name="notes" maxlength="100" placeholder="Optional notes..." oninput="updateCharCount(this, 'addCharCount')"></textarea>
+                    <div class="char-counter"><span id="addCharCount">0</span>/100</div>
+                </div>
+                <button type="submit" class="btn-submit" style="width: 100%; background: #4CAF50; margin-top: 5px;">Save Monitor</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Split Details Modal -->
+    <div class="modal-overlay" id="detailsModal">
+        <div class="modal-content modal-wide" style="position: relative;">
+            <button class="modal-close" onclick="closeDetailsModal()">&times;</button>
+            
+            <div class="modal-col-left">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <button class="btn-edit-toggle" id="editToggleBtn" onclick="toggleEditMode()">✏️ Edit Details</button>
+                    <span style="font-size: 11px; color: #888;" id="modalStatusTag">STATUS</span>
+                </div>
+
+                <form id="detailsForm" method="POST">
+                    <input type="hidden" id="detSiteId">
+                    <div class="form-group">
+                        <label>Monitor Name</label>
+                        <input type="text" name="name" id="detName" disabled required>
+                    </div>
+                    <div class="form-group">
+                        <label>Group</label>
+                        <input type="text" name="group_name" id="detGroup" list="groupSuggestions" disabled required autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label>Monitor Type</label>
+                        <select name="monitor_type" id="detType" disabled onchange="handleTypeChangeEdit()">
+                            <option value="https">HTTPS Website</option>
+                            <option value="http">HTTP Website</option>
+                            <option value="ping">Ping (ICMP)</option>
+                            <option value="tcp">TCP Port Check</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Target Address / URL / IP</label>
+                        <input type="text" name="url" id="detUrl" disabled required>
+                    </div>
+                    <div class="form-group">
+                        <label>Check Interval (seconds)</label>
+                        <input type="number" name="interval" id="detInterval" disabled min="5" max="86400" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Notes (max 100 chars)</label>
+                        <textarea name="notes" id="detNotes" maxlength="100" disabled oninput="updateCharCount(this, 'editCharCount')"></textarea>
+                        <div class="char-counter"><span id="editCharCount">0</span>/100</div>
+                    </div>
+
+                    <div style="text-align: right; margin-top: 10px;">
+                        <button type="submit" class="btn-submit" id="saveBtn" style="display: none;">💾 Save Changes</button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="modal-col-right">
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-right: 25px;">
+                        <h4 style="margin: 0; color: #fff; font-size: 14px;">Response Latency (Since Creation)</h4>
+                        <div class="tf-menu">
+                            <button type="button" class="tf-btn active" onclick="switchTimeframe('5h', event)">5H</button>
+                            <button type="button" class="tf-btn" onclick="switchTimeframe('1d', event)">1D</button>
+                            <button type="button" class="tf-btn" onclick="switchTimeframe('1w', event)">1W</button>
+                            <button type="button" class="tf-btn" onclick="switchTimeframe('1m', event)">1M</button>
+                            <button type="button" class="tf-btn" onclick="switchTimeframe('1y', event)">1Y</button>
+                        </div>
+                    </div>
+                    <div style="height: 220px; position: relative;">
+                        <canvas id="latencyChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        Total Uptime
+                        <div class="stat-value" id="statUptime" style="color: #4CAF50;">100%</div>
+                    </div>
+                    <div class="stat-item">
+                        Average Latency
+                        <div class="stat-value" id="statAvgLatency">0 ms</div>
+                    </div>
+                    <div class="stat-item">
+                        Time Since Last Down
+                        <div class="stat-value" id="statTimeSinceDown" style="color: #ffb74d;">Never down!</div>
+                    </div>
+                    <div class="stat-item">
+                        Last Check Time
+                        <div class="stat-value" id="statLastCheck" style="font-size: 12px; color: #aaa;">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Card -->
+    <div class="card">
+        <h3>Monitored Services</h3>
+        <div id="dashboardContainer">
+            <p style="text-align: center; color: #888;">Loading monitors...</p>
+        </div>
+    </div>
+
+    <script>
+        let latencyChart = null;
+        let isEditUnlocked = false;
+        let activeModalSiteId = null;
+        let activeTimeframe = '5h';
+        let collapsedGroups = {};
+
+        function updateCharCount(textarea, counterId) {
+            document.getElementById(counterId).innerText = textarea.value.length;
+        }
+
+        function handleTypeChangeAdd() {
+            const type = document.getElementById('addTypeSelect').value;
+            const input = document.getElementById('addUrlInput');
+            if (type === 'https') input.value = 'https://';
+            else if (type === 'http') input.value = 'http://';
+            else input.value = '';
+        }
+
+        function handleTypeChangeEdit() {
+            const type = document.getElementById('detType').value;
+            const input = document.getElementById('detUrl');
+            if (type === 'https' && !input.value.startsWith('https://')) input.value = 'https://';
+            else if (type === 'http' && !input.value.startsWith('http://')) input.value = 'http://';
+            else if (type !== 'https' && type !== 'http') {
+                if (input.value.startsWith('http://') || input.value.startsWith('https://')) input.value = '';
+            }
+        }
+
+        function openAddModal() { document.getElementById('addModal').style.display = 'flex'; }
+        function closeAddModal() { document.getElementById('addModal').style.display = 'none'; }
+        function openUserModal() { document.getElementById('userModal').style.display = 'flex'; }
+        function closeUserModal() { document.getElementById('userModal').style.display = 'none'; }
+        function openStatusPageModal() { document.getElementById('statusPageModal').style.display = 'flex'; }
+        function closeStatusPageModal() { document.getElementById('statusPageModal').style.display = 'none'; }
+        function closeDetailsModal() { document.getElementById('detailsModal').style.display = 'none'; }
+
+        function editUser(id, username, role, statusPageId) {
+            document.getElementById('userModalTitle').innerText = 'Edit User: ' + username;
+            document.getElementById('userForm').action = '/user/update/' + id;
+            document.getElementById('userUsername').value = username;
+            document.getElementById('userPassword').value = '';
+            document.getElementById('pwdHint').innerText = '(Leave blank to keep current password)';
+            document.getElementById('userRole').value = role;
+            document.getElementById('userStatusPageId').value = statusPageId;
+            document.getElementById('userSubmitBtn').innerText = 'Save Changes';
+            document.getElementById('userSubmitBtn').style.background = '#2196F3';
+            document.getElementById('userCancelBtn').style.display = 'inline-block';
+        }
+
+        function resetUserForm() {
+            document.getElementById('userModalTitle').innerText = 'Create New User';
+            document.getElementById('userForm').action = '/user/add';
+            document.getElementById('userUsername').value = '';
+            document.getElementById('userPassword').value = '';
+            document.getElementById('pwdHint').innerText = '';
+            document.getElementById('userRole').value = 'user';
+            document.getElementById('userStatusPageId').value = '';
+            document.getElementById('userSubmitBtn').innerText = 'Create User';
+            document.getElementById('userSubmitBtn').style.background = '#9c27b0';
+            document.getElementById('userCancelBtn').style.display = 'none';
+        }
+
+        function toggleEditMode() {
+            isEditUnlocked = !isEditUnlocked;
+            const fields = ['detName', 'detGroup', 'detType', 'detUrl', 'detInterval', 'detNotes'];
+            fields.forEach(id => document.getElementById(id).disabled = !isEditUnlocked);
+            
+            const saveBtn = document.getElementById('saveBtn');
+            const toggleBtn = document.getElementById('editToggleBtn');
+            
+            if (isEditUnlocked) {
+                saveBtn.style.display = 'inline-block';
+                toggleBtn.innerText = '🔒 Lock Fields';
+                toggleBtn.style.background = '#666';
+            } else {
+                saveBtn.style.display = 'none';
+                toggleBtn.innerText = '✏️ Edit Details';
+                toggleBtn.style.background = '#ff9800';
+            }
+        }
+
+        function toggleGroup(groupName) {
+            collapsedGroups[groupName] = !collapsedGroups[groupName];
+            updateDashboard();
+        }
+
+        function switchTimeframe(tf, event) {
+            activeTimeframe = tf;
+            document.querySelectorAll('.tf-btn').forEach(btn => btn.classList.remove('active'));
+            if (event && event.target) event.target.classList.add('active');
+            if (activeModalSiteId) {
+                openDetailsModal(activeModalSiteId, true);
+            }
+        }
+
+        function openDetailsModal(siteId, keepTf = false) {
+            activeModalSiteId = siteId;
+            if (!keepTf) activeTimeframe = '5h';
+
+            fetch(`/api/site/${siteId}?tf=${activeTimeframe}`)
+                .then(res => res.json())
+                .then(data => {
+                    const site = data.site;
+                    const history = data.history;
+                    const stats = data.stats;
+
+                    document.getElementById('detailsForm').action = '/update/' + site.id;
+                    document.getElementById('detSiteId').value = site.id;
+                    document.getElementById('detName').value = site.name;
+                    document.getElementById('detGroup').value = site.group_name;
+                    document.getElementById('detType').value = site.monitor_type;
+                    document.getElementById('detUrl').value = site.url;
+                    document.getElementById('detInterval').value = site.check_interval;
+                    document.getElementById('detNotes').value = site.notes || '';
+                    document.getElementById('editCharCount').innerText = (site.notes || '').length;
+
+                    document.getElementById('modalStatusTag').innerText = site.last_status;
+                    
+                    document.getElementById('statUptime').innerText = stats.uptime_pct + '%';
+                    document.getElementById('statAvgLatency').innerText = stats.avg_latency + ' ms';
+                    document.getElementById('statTimeSinceDown').innerText = stats.time_since_down;
+                    document.getElementById('statLastCheck').innerText = site.last_checked;
+
+                    isEditUnlocked = true;
+                    toggleEditMode();
+
+                    renderChart(history);
+                    document.getElementById('detailsModal').style.display = 'flex';
+                });
+        }
+
+        function renderChart(historyLogs) {
+            const labels = historyLogs.map(h => h.timestamp);
+            const latencies = historyLogs.map(h => h.latency);
+
+            const ctx = document.getElementById('latencyChart').getContext('2d');
+            if (latencyChart) latencyChart.destroy();
+
+            latencyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Avg Latency (ms)',
+                        data: latencies,
+                        borderColor: '#2196F3',
+                        backgroundColor: 'rgba(33, 150, 243, 0.15)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#888', maxTicksLimit: 8 }, grid: { color: '#2a2a2a' } },
+                        y: { ticks: { color: '#888' }, grid: { color: '#2a2a2a' } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        function updateDashboard() {
+            fetch('/api/status')
+                .then(res => {
+                    if (res.status === 401 || res.status === 403) { window.location.href = '/login'; }
+                    return res.json();
+                })
+                .then(sites => {
+                    const container = document.getElementById('dashboardContainer');
+                    if (!Array.isArray(sites)) return;
+                    if (sites.length === 0) {
+                        container.innerHTML = '<p style="text-align: center; color: #888;">No monitors added yet. Click "+ Add New Monitor" above!</p>';
+                        return;
+                    }
+
+                    let groups = {};
+                    sites.forEach(site => {
+                        let g = site.group_name || 'General';
+                        if (!groups[g]) groups[g] = [];
+                        groups[g].push(site);
+                    });
+
+                    let html = '';
+                    for (let gName in groups) {
+                        let isCollapsed = collapsedGroups[gName] || false;
+                        let arrow = isCollapsed ? '▶' : '▼';
+                        let displayStyle = isCollapsed ? 'display: none;' : '';
+
+                        html += `
+                            <div class="group-header" onclick="toggleGroup('${gName}')">
+                                <span>${arrow} 📁 ${gName} (${groups[gName].length})</span>
+                                <span style="font-size: 12px; color: #888;">Click to toggle</span>
+                            </div>
+                            <div style="${displayStyle}">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Monitor Name</th>
+                                            <th>Status</th>
+                                            <th>Recent Timeline</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        `;
+
+                        groups[gName].forEach(site => {
+                            let barsHtml = site.bars.map(b => `<div class="bar bar-${b.status_class}" title="Checked at: ${b.timestamp}"></div>`).join('');
+                            html += `
+                                <tr>
+                                    <td>
+                                        <span class="badge badge-type">${site.monitor_type}</span>
+                                        <a class="monitor-name-link" onclick="openDetailsModal(${site.id})">${site.name}</a>
+                                        <div style="font-size: 11px; color: #777; margin-top: 2px;">Interval: ${site.check_interval}s | Last: ${site.last_checked}</div>
+                                    </td>
+                                    <td><span class="badge ${site.status_class}">${site.last_status}</span></td>
+                                    <td><div class="pulse-bars">${barsHtml || '<span style="color:#555;">Gathering...</span>'}</div></td>
+                                    <td><a href="/delete/${site.id}" class="btn-delete" onclick="return confirm('Delete this monitor?');">Delete</a></td>
+                                </tr>
+                            `;
+                        });
+
+                        html += `</tbody></table></div>`;
+                    }
+
+                    container.innerHTML = html;
+                });
+        }
+
+        setInterval(updateDashboard, 3000);
+        updateDashboard();
+    </script>
+</body>
+</html>
