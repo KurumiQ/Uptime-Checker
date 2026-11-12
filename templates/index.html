@@ -44,11 +44,14 @@
         .group-header:hover { background: #2a2a2a; }
         
         .card { background: #1e1e1e; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 5px; margin-bottom: 15px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; font-size: 14px; vertical-align: middle; }
-        th { background: #1a1a1a; color: #aaa; }
+        table { width: 100%; border-collapse: collapse; margin-top: 5px; margin-bottom: 15px; table-layout: fixed; }
+        th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid #333; font-size: 14px; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         
-        .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-family: monospace; font-size: 11px; text-transform: uppercase; }
+        table colgroup col:nth-child(1) { width: 34%; }
+        table colgroup col:nth-child(2) { width: 12%; }
+        table colgroup col:nth-child(3) { width: 54%; }
+
+        .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-family: monospace; font-size: 11px; text-transform: uppercase; display: inline-block; }
         .badge-type { background: #333; color: #ccc; margin-right: 5px; }
         .badge-up { background: #1b3a20; color: #81c784; }
         .badge-warn { background: #3a2e1b; color: #ffb74d; }
@@ -57,13 +60,13 @@
         .monitor-name-link { color: #64b5f6; text-decoration: none; font-weight: bold; font-size: 15px; cursor: pointer; }
         .monitor-name-link:hover { text-decoration: underline; color: #90caf9; }
 
-        .pulse-bars { display: flex; gap: 3px; align-items: center; height: 18px; }
-        .bar { width: 6px; height: 16px; border-radius: 2px; cursor: pointer; position: relative; }
+        .pulse-bars { display: flex; gap: 3px; align-items: center; height: 18px; width: 100%; justify-content: flex-end; }
+        .bar { width: 6px; height: 16px; border-radius: 2px; cursor: pointer; flex-shrink: 0; }
         .bar-badge-up { background-color: #4CAF50; }
         .bar-badge-warn { background-color: #ff9800; }
         .bar-badge-down { background-color: #f44336; }
 
-        .btn-delete { background: #f44336; padding: 5px 10px; font-size: 13px; text-decoration: none; border-radius: 4px; color: white; }
+        .btn-delete { background: #f44336; padding: 5px 10px; font-size: 13px; text-decoration: none; border-radius: 4px; color: white; display: inline-block; }
         .btn-edit-user { background: #2196F3; padding: 5px 10px; font-size: 13px; border: none; border-radius: 4px; color: white; cursor: pointer; margin-right: 4px; }
         
         .tf-menu { display: flex; gap: 4px; }
@@ -78,13 +81,17 @@
         .live-indicator { font-size: 12px; color: #4CAF50; display: flex; align-items: center; gap: 6px; }
         .dot { width: 8px; height: 8px; background: #4CAF50; border-radius: 50%; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+
+        .monitor-picker-box { max-height: 180px; overflow-y: auto; background: #2a2a2a; border: 1px solid #444; padding: 8px; border-radius: 4px; }
+        .monitor-picker-item { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #ddd; padding: 6px 8px; border-bottom: 1px solid #333; cursor: pointer; border-radius: 3px; }
+        .monitor-picker-item:hover { background: #333; }
     </style>
 </head>
 <body>
     <div class="header-container">
         <div>
             <h1>🚀 Active Uptime Monitor</h1>
-            <div class="live-indicator" style="margin-top: 5px;"><div class="dot"></div> RBAC & Status Pages Active</div>
+            <div class="live-indicator" style="margin-top: 5px;"><div class="dot"></div> Real-Time Sync Active</div>
         </div>
         <div class="header-actions">
             <button class="btn-status-pages" onclick="openStatusPageModal()">📊 Status Pages</button>
@@ -94,9 +101,35 @@
         </div>
     </div>
 
+    <!-- Edit Group Modal -->
+    <div class="modal-overlay" id="editGroupModal" onclick="checkOutsideClose(event, 'editGroupModal')">
+        <div class="modal-content" style="position: relative; width: 480px;" onclick="event.stopPropagation()">
+            <button class="modal-close" onclick="closeEditGroupModal()">&times;</button>
+            <h3 style="margin-top: 0; color: #fff;" id="groupModalTitle">Edit Group</h3>
+            <form action="/group/update" method="POST">
+                <input type="hidden" name="old_name" id="groupOldName">
+                <div class="form-group">
+                    <label>Group Name</label>
+                    <input type="text" name="new_name" id="groupNewName" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Group Description</label>
+                    <textarea name="description" id="groupDescription" placeholder="Optional notes about this group..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Included Monitors</label>
+                    <div class="monitor-picker-box" id="groupMonitorPicker">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+                <button type="submit" class="btn-submit" style="width: 100%; background: #ff9800; margin-top: 10px;">Save Group Changes</button>
+            </form>
+        </div>
+    </div>
+
     <!-- Status Pages Management Modal -->
-    <div class="modal-overlay" id="statusPageModal">
-        <div class="modal-content" style="position: relative; width: 520px;">
+    <div class="modal-overlay" id="statusPageModal" onclick="checkOutsideClose(event, 'statusPageModal')">
+        <div class="modal-content" style="position: relative; width: 520px;" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeStatusPageModal()">&times;</button>
             <h3 style="margin-top: 0; color: #fff;">Status Pages Management</h3>
             
@@ -114,17 +147,21 @@
                     <textarea name="description" placeholder="Brief description..."></textarea>
                 </div>
                 <div class="form-group">
+                    <label>Logo Image URL (Favicon & Header)</label>
+                    <input type="text" name="logo_url" placeholder="https://example.com/logo.png" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Footer Text</label>
+                    <input type="text" name="footer_text" placeholder="Powered by..." value="Powered by Self-Hosted Uptime Monitor" autocomplete="off">
+                </div>
+                <div class="form-group">
                     <label>Custom CSS</label>
                     <textarea name="custom_css" placeholder="e.g. body { background: #111; }"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>Select Monitors to Include</label>
-                    <div style="max-height: 120px; overflow-y: auto; background: #2a2a2a; border: 1px solid #444; padding: 8px; border-radius: 4px;">
-                        {% for site in all_sites %}
-                        <label style="display: block; font-size: 13px; color: #ddd; margin-bottom: 4px; cursor: pointer;">
-                            <input type="checkbox" name="monitor_ids" value="{{ site.id }}"> {{ site.name }} ({{ site.group_name }})
-                        </label>
-                        {% endfor %}
+                    <label>Select & Order Monitors to Include</label>
+                    <div class="monitor-picker-box" id="statusPageMonitorPickerList">
+                        <!-- Populated dynamically -->
                     </div>
                 </div>
                 <button type="submit" class="btn-submit" style="width: 100%; background: #00bcd4;">Create Status Page</button>
@@ -132,14 +169,7 @@
 
             <h4 style="color: #fff; margin-bottom: 8px;">Existing Status Pages</h4>
             <div style="max-height: 160px; overflow-y: auto;">
-                <table style="margin-top: 0;">
-                    <thead>
-                        <tr>
-                            <th>Title</th>
-                            <th>Public Link</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
+                <table style="margin-top: 0; table-layout: auto;">
                     <tbody>
                         {% for sp in status_pages %}
                         <tr>
@@ -154,9 +184,9 @@
         </div>
     </div>
 
-    <!-- User Management Modal (Supports Create & Edit) -->
-    <div class="modal-overlay" id="userModal">
-        <div class="modal-content" style="position: relative; width: 500px;">
+    <!-- User Management Modal -->
+    <div class="modal-overlay" id="userModal" onclick="checkOutsideClose(event, 'userModal')">
+        <div class="modal-content" style="position: relative; width: 500px;" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeUserModal()">&times;</button>
             <h3 style="margin-top: 0; color: #fff;" id="userModalTitle">Create New User</h3>
             
@@ -194,15 +224,7 @@
 
             <h4 style="color: #fff; margin-bottom: 8px;">Existing Users</h4>
             <div style="max-height: 160px; overflow-y: auto;">
-                <table style="margin-top: 0;">
-                    <thead>
-                        <tr>
-                            <th>Username</th>
-                            <th>Role</th>
-                            <th>Status Page</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
+                <table style="margin-top: 0; table-layout: auto;">
                     <tbody>
                         {% for u in users %}
                         <tr>
@@ -224,8 +246,8 @@
     </div>
 
     <!-- Add New Monitor Modal -->
-    <div class="modal-overlay" id="addModal">
-        <div class="modal-content" style="position: relative;">
+    <div class="modal-overlay" id="addModal" onclick="checkOutsideClose(event, 'addModal')">
+        <div class="modal-content" style="position: relative;" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeAddModal()">&times;</button>
             <h3 style="margin-top: 0; color: #fff;">Add New Monitor</h3>
             <form action="/add" method="POST">
@@ -234,12 +256,10 @@
                     <input type="text" name="name" placeholder="e.g. Google Server" required autocomplete="off">
                 </div>
                 <div class="form-group">
-                    <label>Group</label>
-                    <input type="text" name="group_name" list="groupSuggestions" placeholder="e.g. sites or servers" autocomplete="off" required>
+                    <label>Group (Optional)</label>
+                    <input type="text" name="group_name" id="addGroupInput" list="groupSuggestions" placeholder="e.g. servers (leave blank for ungrouped)" autocomplete="off">
                     <datalist id="groupSuggestions">
-                        {% for g in groups %}
-                            <option value="{{ g }}">
-                        {% endfor %}
+                        <!-- Populated dynamically -->
                     </datalist>
                 </div>
                 <div class="form-group">
@@ -270,13 +290,16 @@
     </div>
 
     <!-- Split Details Modal -->
-    <div class="modal-overlay" id="detailsModal">
-        <div class="modal-content modal-wide" style="position: relative;">
+    <div class="modal-overlay" id="detailsModal" onclick="checkOutsideClose(event, 'detailsModal')">
+        <div class="modal-content modal-wide" style="position: relative;" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeDetailsModal()">&times;</button>
             
             <div class="modal-col-left">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                    <button class="btn-edit-toggle" id="editToggleBtn" onclick="toggleEditMode()">✏️ Edit Details</button>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="btn-edit-toggle" id="editToggleBtn" onclick="toggleEditMode()">✏️ Edit Details</button>
+                        <a id="deleteMonitorBtn" href="#" class="btn-delete" style="display: none; padding: 6px 12px; font-size: 12px;" onclick="return confirm('Delete this monitor?');">Delete Monitor</a>
+                    </div>
                     <span style="font-size: 11px; color: #888;" id="modalStatusTag">STATUS</span>
                 </div>
 
@@ -287,8 +310,8 @@
                         <input type="text" name="name" id="detName" disabled required>
                     </div>
                     <div class="form-group">
-                        <label>Group</label>
-                        <input type="text" name="group_name" id="detGroup" list="groupSuggestions" disabled required autocomplete="off">
+                        <label>Group (Optional)</label>
+                        <input type="text" name="group_name" id="detGroup" list="groupSuggestions" disabled autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label>Monitor Type</label>
@@ -346,6 +369,10 @@
                         <div class="stat-value" id="statAvgLatency">0 ms</div>
                     </div>
                     <div class="stat-item">
+                        Current Status Code / Msg
+                        <div class="stat-value" id="statLastStatusMsg" style="color: #64b5f6;">-</div>
+                    </div>
+                    <div class="stat-item">
                         Time Since Last Down
                         <div class="stat-value" id="statTimeSinceDown" style="color: #ffb74d;">Never down!</div>
                     </div>
@@ -371,7 +398,10 @@
         let isEditUnlocked = false;
         let activeModalSiteId = null;
         let activeTimeframe = '5h';
-        let collapsedGroups = {};
+        
+        let collapsedGroups = JSON.parse(localStorage.getItem('collapsedGroups') || '{}');
+        let globalSites = [];
+        let globalGroups = [];
 
         function updateCharCount(textarea, counterId) {
             document.getElementById(counterId).innerText = textarea.value.length;
@@ -402,6 +432,34 @@
         function openStatusPageModal() { document.getElementById('statusPageModal').style.display = 'flex'; }
         function closeStatusPageModal() { document.getElementById('statusPageModal').style.display = 'none'; }
         function closeDetailsModal() { document.getElementById('detailsModal').style.display = 'none'; }
+        function closeEditGroupModal() { document.getElementById('editGroupModal').style.display = 'none'; }
+
+        function checkOutsideClose(event, modalId) {
+            if (event.target.id === modalId) {
+                document.getElementById(modalId).style.display = 'none';
+            }
+        }
+
+        function openEditGroupModal(groupName) {
+            const gObj = globalGroups.find(g => g.name === groupName) || { name: groupName, description: '' };
+            document.getElementById('groupOldName').value = groupName;
+            document.getElementById('groupNewName').value = groupName;
+            document.getElementById('groupDescription').value = gObj.description || '';
+            document.getElementById('groupModalTitle').innerText = 'Edit Group: ' + groupName;
+
+            let pickerHtml = '';
+            globalSites.forEach(site => {
+                let isChecked = site.group_name === groupName ? 'checked' : '';
+                pickerHtml += `
+                    <label class="monitor-picker-item">
+                        <span><strong>${site.name}</strong> <span style="color: #888; font-size: 11px;">(${site.group_name || 'Ungrouped'})</span></span>
+                        <input type="checkbox" name="monitor_ids" value="${site.id}" ${isChecked} style="width: auto;">
+                    </label>
+                `;
+            });
+            document.getElementById('groupMonitorPicker').innerHTML = pickerHtml;
+            document.getElementById('editGroupModal').style.display = 'flex';
+        }
 
         function editUser(id, username, role, statusPageId) {
             document.getElementById('userModalTitle').innerText = 'Edit User: ' + username;
@@ -450,6 +508,7 @@
 
         function toggleGroup(groupName) {
             collapsedGroups[groupName] = !collapsedGroups[groupName];
+            localStorage.setItem('collapsedGroups', JSON.stringify(collapsedGroups));
             updateDashboard();
         }
 
@@ -476,7 +535,7 @@
                     document.getElementById('detailsForm').action = '/update/' + site.id;
                     document.getElementById('detSiteId').value = site.id;
                     document.getElementById('detName').value = site.name;
-                    document.getElementById('detGroup').value = site.group_name;
+                    document.getElementById('detGroup').value = site.group_name || '';
                     document.getElementById('detType').value = site.monitor_type;
                     document.getElementById('detUrl').value = site.url;
                     document.getElementById('detInterval').value = site.check_interval;
@@ -487,8 +546,13 @@
                     
                     document.getElementById('statUptime').innerText = stats.uptime_pct + '%';
                     document.getElementById('statAvgLatency').innerText = stats.avg_latency + ' ms';
+                    document.getElementById('statLastStatusMsg').innerText = site.last_status;
                     document.getElementById('statTimeSinceDown').innerText = stats.time_since_down;
                     document.getElementById('statLastCheck').innerText = site.last_checked;
+
+                    const delBtn = document.getElementById('deleteMonitorBtn');
+                    delBtn.href = '/delete/' + site.id;
+                    delBtn.style.display = 'inline-block';
 
                     isEditUnlocked = true;
                     toggleEditMode();
@@ -537,42 +601,97 @@
                     if (res.status === 401 || res.status === 403) { window.location.href = '/login'; }
                     return res.json();
                 })
-                .then(sites => {
+                .then(response => {
+                    globalSites = response.sites;
+                    globalGroups = response.groups;
                     const container = document.getElementById('dashboardContainer');
-                    if (!Array.isArray(sites)) return;
-                    if (sites.length === 0) {
+                    if (!Array.isArray(globalSites)) return;
+                    if (globalSites.length === 0) {
                         container.innerHTML = '<p style="text-align: center; color: #888;">No monitors added yet. Click "+ Add New Monitor" above!</p>';
                         return;
                     }
 
+                    let datalistHtml = '';
+                    globalGroups.forEach(g => { datalistHtml += `<option value="${g.name}">`; });
+                    document.getElementById('groupSuggestions').innerHTML = datalistHtml;
+
+                    let spPickerHtml = '';
+                    globalSites.forEach(site => {
+                        spPickerHtml += `
+                            <label class="monitor-picker-item">
+                                <span><strong>${site.name}</strong> <span style="color: #888; font-size: 11px;">(${site.group_name || 'Ungrouped'})</span></span>
+                                <input type="checkbox" name="monitor_ids" value="${site.id}" style="width: auto;">
+                            </label>
+                        `;
+                    });
+                    document.getElementById('statusPageMonitorPickerList').innerHTML = spPickerHtml;
+
                     let groups = {};
-                    sites.forEach(site => {
-                        let g = site.group_name || 'General';
-                        if (!groups[g]) groups[g] = [];
-                        groups[g].push(site);
+                    let ungrouped = [];
+
+                    globalSites.forEach(site => {
+                        let g = site.group_name;
+                        if (!g || g.trim() === '') {
+                            ungrouped.push(site);
+                        } else {
+                            if (!groups[g]) groups[g] = [];
+                            groups[g].push(site);
+                        }
                     });
 
                     let html = '';
+
+                    if (ungrouped.length > 0) {
+                        html += `
+                            <table>
+                                <colgroup>
+                                    <col>
+                                    <col>
+                                    <col>
+                                </colgroup>
+                                <tbody>
+                        `;
+                        ungrouped.forEach(site => {
+                            let barsHtml = site.bars.map(b => `<div class="bar bar-${b.status_class}" title="Checked at: ${b.timestamp}"></div>`).join('');
+                            html += `
+                                <tr>
+                                    <td>
+                                        <span class="badge badge-type">${site.monitor_type}</span>
+                                        <a class="monitor-name-link" onclick="openDetailsModal(${site.id})">${site.name}</a>
+                                        <div style="font-size: 11px; color: #777; margin-top: 2px;">Interval: ${site.check_interval}s | Last: ${site.last_checked}</div>
+                                    </td>
+                                    <td><span class="badge ${site.status_class}">${site.uptime_pct}%</span></td>
+                                    <td><div class="pulse-bars">${barsHtml || '<span style="color:#555;">Gathering...</span>'}</div></td>
+                                </tr>
+                            `;
+                        });
+                        html += `</tbody></table>`;
+                    }
+
                     for (let gName in groups) {
                         let isCollapsed = collapsedGroups[gName] || false;
                         let arrow = isCollapsed ? '▶' : '▼';
                         let displayStyle = isCollapsed ? 'display: none;' : '';
 
+                        let totalUptime = 0;
+                        groups[gName].forEach(s => { totalUptime += s.uptime_pct; });
+                        let groupAvgUptime = (totalUptime / groups[gName].length).toFixed(2);
+
                         html += `
-                            <div class="group-header" onclick="toggleGroup('${gName}')">
-                                <span>${arrow} 📁 ${gName} (${groups[gName].length})</span>
-                                <span style="font-size: 12px; color: #888;">Click to toggle</span>
+                            <div class="group-header">
+                                <span onclick="toggleGroup('${gName}')">${arrow} ${gName} (${groups[gName].length})</span>
+                                <div style="display: flex; gap: 15px; align-items: center;">
+                                    <span style="font-size: 13px; color: #81c784;">Avg Uptime: ${groupAvgUptime}%</span>
+                                    <button type="button" class="btn-order" style="background:#2196F3; padding: 4px 8px; border-radius: 4px; color:#fff; cursor:pointer;" onclick="openEditGroupModal('${gName}')">✏️ Edit Group</button>
+                                </div>
                             </div>
                             <div style="${displayStyle}">
                                 <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Monitor Name</th>
-                                            <th>Status</th>
-                                            <th>Recent Timeline</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
+                                    <colgroup>
+                                        <col>
+                                        <col>
+                                        <col>
+                                    </colgroup>
                                     <tbody>
                         `;
 
@@ -585,9 +704,8 @@
                                         <a class="monitor-name-link" onclick="openDetailsModal(${site.id})">${site.name}</a>
                                         <div style="font-size: 11px; color: #777; margin-top: 2px;">Interval: ${site.check_interval}s | Last: ${site.last_checked}</div>
                                     </td>
-                                    <td><span class="badge ${site.status_class}">${site.last_status}</span></td>
+                                    <td><span class="badge ${site.status_class}">${site.uptime_pct}%</span></td>
                                     <td><div class="pulse-bars">${barsHtml || '<span style="color:#555;">Gathering...</span>'}</div></td>
-                                    <td><a href="/delete/${site.id}" class="btn-delete" onclick="return confirm('Delete this monitor?');">Delete</a></td>
                                 </tr>
                             `;
                         });

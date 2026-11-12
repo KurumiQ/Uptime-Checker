@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <title>{{ page.title }} - Status Page</title>
+    {% if page.logo_url %}
+    <link rel="icon" type="image/png" href="{{ page.logo_url }}">
+    {% endif %}
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #121212; color: #e0e0e0; }
         .top-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
@@ -10,6 +13,9 @@
         .btn-back:hover { background: #444; }
         .btn-edit-sp { background: #ff9800; color: white; border: none; padding: 8px 14px; border-radius: 4px; font-size: 13px; font-weight: bold; cursor: pointer; }
         .btn-edit-sp:hover { background: #f57c00; }
+
+        .logo-container { text-align: center; margin-bottom: 15px; }
+        .logo-container img { max-height: 60px; max-width: 200px; object-fit: contain; }
 
         h1 { color: #ffffff; margin: 0 0 5px 0; text-align: center; }
         .description { text-align: center; color: #aaa; font-size: 14px; margin-bottom: 30px; }
@@ -34,6 +40,11 @@
         textarea { resize: vertical; height: 60px; font-family: monospace; }
         .btn-submit { padding: 9px 18px; background: #2196F3; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
 
+        .order-row { display: flex; align-items: center; justify-content: space-between; background: #2a2a2a; padding: 6px 10px; margin-bottom: 6px; border-radius: 4px; border: 1px solid #444; font-size: 13px; }
+        .order-btns { display: flex; gap: 4px; }
+        .btn-order { background: #444; color: #fff; border: none; padding: 3px 8px; border-radius: 3px; cursor: pointer; font-size: 12px; }
+        .btn-order:hover { background: #555; }
+
         .footer { text-align: center; color: #666; font-size: 12px; margin-top: 30px; }
 
         {{ page.custom_css | safe }}
@@ -47,6 +58,12 @@
         {% endif %}
     </div>
 
+    {% if page.logo_url %}
+    <div class="logo-container">
+        <img src="{{ page.logo_url }}" alt="Logo">
+    </div>
+    {% endif %}
+
     <h1>{{ page.title }}</h1>
     {% if page.description %}
     <div class="description">{{ page.description }}</div>
@@ -56,7 +73,7 @@
     <div class="card">
         <div>
             <strong>{{ monitor.name }}</strong>
-            <div style="font-size: 11px; color: #777; margin-top: 3px;">Type: {{ monitor.monitor_type | upper }}</div>
+            <div style="font-size: 11px; color: #777; margin-top: 3px;">Type: {{ monitor.monitor_type | upper }} | Uptime: <span style="color: #81c784;">{{ monitor.stats.uptime_pct }}%</span></div>
         </div>
         <div style="display: flex; align-items: center; gap: 20px;">
             <div class="pulse-bars">
@@ -71,15 +88,15 @@
     <p style="text-align: center; color: #888;">No monitors assigned to this status page yet.</p>
     {% endfor %}
 
-    <div class="footer">Powered by Self-Hosted Uptime Monitor</div>
+    <div class="footer">{{ page.footer_text or 'Powered by Self-Hosted Uptime Monitor' }}</div>
 
     {% if is_admin %}
     <!-- Admin Edit Status Page Modal -->
-    <div class="modal-overlay" id="editSpModal">
-        <div class="modal-content" style="position: relative;">
+    <div class="modal-overlay" id="editSpModal" onclick="if(event.target.id === 'editSpModal') closeEditModal();">
+        <div class="modal-content" style="position: relative;" onclick="event.stopPropagation()">
             <button class="modal-close" onclick="closeEditModal()">&times;</button>
             <h3 style="margin-top: 0; color: #fff;">Edit Status Page</h3>
-            <form action="/status-page/update/{{ page.id }}" method="POST">
+            <form action="/status-page/update/{{ page.id }}" method="POST" id="spEditForm">
                 <div class="form-group">
                     <label>Page Title</label>
                     <input type="text" name="title" value="{{ page.title }}" required autocomplete="off">
@@ -89,20 +106,45 @@
                     <textarea name="description" placeholder="Brief description under title...">{{ page.description }}</textarea>
                 </div>
                 <div class="form-group">
+                    <label>Logo Image URL (Favicon & Header)</label>
+                    <input type="text" name="logo_url" value="{{ page.logo_url or '' }}" placeholder="https://example.com/logo.png" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Footer Text</label>
+                    <input type="text" name="footer_text" value="{{ page.footer_text or 'Powered by Self-Hosted Uptime Monitor' }}" autocomplete="off">
+                </div>
+                <div class="form-group">
                     <label>Custom CSS</label>
                     <textarea name="custom_css" placeholder="e.g. body { background: #111; }">{{ page.custom_css }}</textarea>
                 </div>
                 <div class="form-group">
-                    <label>Select & Order Monitors (Check to include)</label>
-                    <div style="max-height: 160px; overflow-y: auto; background: #2a2a2a; border: 1px solid #444; padding: 8px; border-radius: 4px;">
+                    <label>Monitors & Order</label>
+                    <div id="monitorOrderList" style="max-height: 180px; overflow-y: auto; background: #2a2a2a; border: 1px solid #444; padding: 8px; border-radius: 4px;">
                         {% set current_ids = page.monitors | map(attribute='id') | list %}
+                        {% for m in page.monitors %}
+                        <div class="order-row" data-id="{{ m.id }}">
+                            <span><strong>{{ m.name }}</strong></span>
+                            <input type="hidden" name="monitor_ids" value="{{ m.id }}">
+                            <div class="order-btns">
+                                <button type="button" class="btn-order" onclick="moveItem(this, -1)">▲</button>
+                                <button type="button" class="btn-order" onclick="moveItem(this, 1)">▼</button>
+                                <button type="button" class="btn-order" style="background:#d32f2f;" onclick="removeItem(this)">✕</button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        
                         {% for site in all_sites %}
-                        <label style="display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #ddd; margin-bottom: 6px;">
-                            <span><input type="checkbox" name="monitor_ids" value="{{ site.id }}" {% if site.id in current_ids %}checked{% endif %}> {{ site.name }}</span>
-                        </label>
+                        {% if site.id not in current_ids %}
+                        <div class="order-row" data-id="{{ site.id }}" style="opacity: 0.5;">
+                            <span>{{ site.name }} (Unselected)</span>
+                            <input type="hidden" name="monitor_ids" value="{{ site.id }}" disabled>
+                            <div class="order-btns">
+                                <button type="button" class="btn-order" style="background:#388e3c;" onclick="includeItem(this)">＋ Add</button>
+                            </div>
+                        </div>
+                        {% endif %}
                         {% endfor %}
                     </div>
-                    <small style="color: #888; font-size: 11px;">Monitors appear in the order selected above.</small>
                 </div>
                 <button type="submit" class="btn-submit">Save Changes</button>
             </form>
@@ -111,6 +153,36 @@
     <script>
         function openEditModal() { document.getElementById('editSpModal').style.display = 'flex'; }
         function closeEditModal() { document.getElementById('editSpModal').style.display = 'none'; }
+
+        function moveItem(btn, direction) {
+            const row = btn.closest('.order-row');
+            const container = document.getElementById('monitorOrderList');
+            if (direction === -1 && row.previousElementSibling) {
+                container.insertBefore(row, row.previousElementSibling);
+            } else if (direction === 1 && row.nextElementSibling) {
+                container.insertBefore(row.nextElementSibling, row);
+            }
+        }
+
+        function removeItem(btn) {
+            const row = btn.closest('.order-row');
+            row.style.opacity = '0.5';
+            row.querySelector('input').disabled = true;
+            row.querySelector('.order-btns').innerHTML = '<button type="button" class="btn-order" style="background:#388e3c;" onclick="includeItem(this)">＋ Add</button>';
+            document.getElementById('monitorOrderList').appendChild(row);
+        }
+
+        function includeItem(btn) {
+            const row = btn.closest('.order-row');
+            row.style.opacity = '1';
+            row.querySelector('input').disabled = false;
+            row.querySelector('.order-btns').innerHTML = `
+                <button type="button" class="btn-order" onclick="moveItem(this, -1)">▲</button>
+                <button type="button" class="btn-order" onclick="moveItem(this, 1)">▼</button>
+                <button type="button" class="btn-order" style="background:#d32f2f;" onclick="removeItem(this)">✕</button>
+            `;
+            document.getElementById('monitorOrderList').appendChild(row);
+        }
     </script>
     {% endif %}
 </body>

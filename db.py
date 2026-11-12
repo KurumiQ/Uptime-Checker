@@ -16,7 +16,6 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Sites table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sites (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,7 +23,7 @@ def init_db():
             url TEXT NOT NULL,
             monitor_type TEXT DEFAULT 'https',
             check_interval INTEGER DEFAULT 20,
-            group_name TEXT DEFAULT 'General',
+            group_name TEXT DEFAULT '',
             notes TEXT,
             created_at TEXT,
             position INTEGER DEFAULT 0,
@@ -35,7 +34,13 @@ def init_db():
         )
     """)
     
-    # History logs table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS groups_meta (
+            name TEXT PRIMARY KEY,
+            description TEXT DEFAULT ''
+        )
+    """)
+    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +53,6 @@ def init_db():
         )
     """)
 
-    # Users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,18 +64,18 @@ def init_db():
         )
     """)
 
-    # Status Pages table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS status_pages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             slug TEXT UNIQUE NOT NULL,
             description TEXT DEFAULT '',
-            custom_css TEXT DEFAULT ''
+            custom_css TEXT DEFAULT '',
+            footer_text TEXT DEFAULT 'Powered by Self-Hosted Uptime Monitor',
+            logo_url TEXT DEFAULT ''
         )
     """)
 
-    # Mapping table between Status Pages and Monitors
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS status_page_monitors (
             status_page_id INTEGER,
@@ -82,11 +86,10 @@ def init_db():
         )
     """)
     
-    # Safe migration checks for older existing databases
     try:
         cursor.execute("ALTER TABLE status_page_monitors ADD COLUMN position INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
-        pass # Column already exists
+        pass
 
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
@@ -97,10 +100,19 @@ def init_db():
         cursor.execute("ALTER TABLE users ADD COLUMN status_page_id INTEGER DEFAULT NULL")
     except sqlite3.OperationalError:
         pass
+
+    try:
+        cursor.execute("ALTER TABLE status_pages ADD COLUMN footer_text TEXT DEFAULT 'Powered by Self-Hosted Uptime Monitor'")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE status_pages ADD COLUMN logo_url TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
     
     conn.commit()
     
-    # Ensure default admin account exists
     admin_check = cursor.execute("SELECT * FROM users WHERE role = 'admin'").fetchone()
     if not admin_check:
         default_pass = hash_password("admin123")
@@ -118,8 +130,42 @@ def get_all_sites():
 def get_existing_groups():
     conn = get_db_connection()
     groups = conn.execute("SELECT DISTINCT group_name FROM sites WHERE group_name IS NOT NULL AND group_name != '' ORDER BY group_name ASC").fetchall()
+    
+    group_list = []
+    for g in groups:
+        g_name = g["group_name"]
+        meta = conn.execute("SELECT description FROM groups_meta WHERE name = ?", (g_name,)).fetchone()
+        group_list.append({
+            "name": g_name,
+            "description": meta["description"] if meta else ""
+        })
     conn.close()
-    return [g["group_name"] for g in groups]
+    return group_list
+
+def update_group_db(old_name, new_name, description, monitor_ids):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        clean_new = new_name.strip() if new_name else ""
+        clean_desc = description.strip() if description else ""
+        
+        if old_name:
+            cursor.execute("UPDATE sites SET group_name = '' WHERE group_name = ?", (old_name,))
+            cursor.execute("DELETE FROM groups_meta WHERE name = ?", (old_name,))
+            
+        if clean_new:
+            cursor.execute("INSERT OR REPLACE INTO groups_meta (name, description) VALUES (?, ?)", (clean_new, clean_desc))
+            
+        if monitor_ids:
+            placeholders = ','.join(['?'] * len(monitor_ids))
+            cursor.execute(f"UPDATE sites SET group_name = ? WHERE id IN ({placeholders})", [clean_new] + monitor_ids)
+            
+        conn.commit()
+        success = True
+    except Exception:
+        success = False
+    conn.close()
+    return success
 
 def add_site_db(name, url, monitor_type, interval, group_name, notes):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -129,7 +175,7 @@ def add_site_db(name, url, monitor_type, interval, group_name, notes):
     conn.execute("""
         INSERT INTO sites (name, url, monitor_type, check_interval, group_name, notes, created_at, position) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (name, url, monitor_type, interval, group_name or "General", notes[:100] if notes else "", now, new_pos))
+    """, (name, url, monitor_type, interval, group_name.strip() if group_name else "", notes[:100] if notes else "", now, new_pos))
     conn.commit()
     conn.close()
 
@@ -150,7 +196,7 @@ def update_site_db(site_id, name, new_url, monitor_type, interval, group_name, n
     conn = get_db_connection()
     conn.execute("""
         UPDATE sites SET name = ?, url = ?, monitor_type = ?, check_interval = ?, group_name = ?, notes = ? WHERE id = ?
-    """, (name, new_url, monitor_type, interval, group_name or "General", notes[:100] if notes else "", site_id))
+    """, (name, new_url, monitor_type, interval, group_name.strip() if group_name else "", notes[:100] if notes else "", site_id))
     conn.commit()
     conn.close()
 
@@ -168,7 +214,7 @@ def update_site_status(site_id, status_msg, status_class, latency):
     conn.commit()
     conn.close()
 
-def get_recent_bars(site_id, limit=20):
+def get_recent_bars(site_id, limit=24):
     conn = get_db_connection()
     bars = conn.execute("""
         SELECT timestamp, status_class FROM history 
@@ -324,7 +370,6 @@ def get_site_statistics(site_id):
         "time_since_down": time_since_down
     }
 
-# User management helpers
 def get_all_users():
     conn = get_db_connection()
     users = conn.execute("""
@@ -384,7 +429,6 @@ def delete_user_db(user_id):
     conn.commit()
     conn.close()
 
-# Status Page helpers
 def get_all_status_pages():
     conn = get_db_connection()
     pages = conn.execute("SELECT * FROM status_pages ORDER BY title ASC").fetchall()
@@ -408,12 +452,12 @@ def get_status_page_by_slug(slug):
     page_dict["monitors"] = [dict(m) for m in monitors]
     return page_dict
 
-def add_status_page_db(title, slug, description, custom_css, monitor_ids):
+def add_status_page_db(title, slug, description, custom_css, footer_text, logo_url, monitor_ids):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO status_pages (title, slug, description, custom_css) VALUES (?, ?, ?, ?)", 
-                       (title, slug, description, custom_css))
+        cursor.execute("INSERT INTO status_pages (title, slug, description, custom_css, footer_text, logo_url) VALUES (?, ?, ?, ?, ?, ?)", 
+                       (title, slug, description, custom_css, footer_text or 'Powered by Self-Hosted Uptime Monitor', logo_url))
         page_id = cursor.lastrowid
         for idx, m_id in enumerate(monitor_ids):
             cursor.execute("INSERT INTO status_page_monitors (status_page_id, site_id, position) VALUES (?, ?, ?)", (page_id, m_id, idx))
@@ -424,12 +468,12 @@ def add_status_page_db(title, slug, description, custom_css, monitor_ids):
     conn.close()
     return success
 
-def update_status_page_db(page_id, title, description, custom_css, monitor_ids):
+def update_status_page_db(page_id, title, description, custom_css, footer_text, logo_url, monitor_ids):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE status_pages SET title = ?, description = ?, custom_css = ? WHERE id = ?", 
-                       (title, description, custom_css, page_id))
+        cursor.execute("UPDATE status_pages SET title = ?, description = ?, custom_css = ?, footer_text = ?, logo_url = ? WHERE id = ?", 
+                       (title, description, custom_css, footer_text or 'Powered by Self-Hosted Uptime Monitor', logo_url, page_id))
         cursor.execute("DELETE FROM status_page_monitors WHERE status_page_id = ?", (page_id,))
         for idx, m_id in enumerate(monitor_ids):
             cursor.execute("INSERT INTO status_page_monitors (status_page_id, site_id, position) VALUES (?, ?, ?)", (page_id, m_id, idx))

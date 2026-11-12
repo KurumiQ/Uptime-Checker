@@ -61,6 +61,7 @@ def check_target(url, monitor_type):
 def background_scheduler():
     last_checked_map = {}
     while True:
+        time.sleep(1) # Base tick loop
         try:
             sites = db.get_all_sites()
             current_time = time.time()
@@ -70,14 +71,14 @@ def background_scheduler():
                 interval = site["check_interval"]
                 last_run = last_checked_map.get(site_id, 0)
                 
+                # Enforce single check execution per site interval
                 if current_time - last_run >= interval:
+                    last_checked_map[site_id] = current_time
                     msg, cls, latency = check_target(site["url"], site["monitor_type"])
                     db.update_site_status(site_id, msg, cls, latency)
-                    last_checked_map[site_id] = current_time
+                    break # Process one check per tick to avoid double-firing
         except Exception as e:
             print(f"Background worker error: {e}")
-            
-        time.sleep(1)
 
 bg_thread = threading.Thread(target=background_scheduler, daemon=True)
 bg_thread.start()
@@ -135,7 +136,8 @@ def public_status_page(slug):
         return "Unauthorized access to this status page", 403
         
     for m in page["monitors"]:
-        m["bars"] = db.get_recent_bars(m["id"], limit=20)
+        m["bars"] = db.get_recent_bars(m["id"], limit=24)
+        m["stats"] = db.get_site_statistics(m["id"])
         
     is_admin = session.get("role") == "admin"
     all_sites = db.get_all_sites() if is_admin else []
@@ -146,24 +148,28 @@ def api_status():
     if "user_id" not in session or session.get("role") == "user":
         return jsonify({"error": "Unauthorized"}), 401
     sites = db.get_all_sites()
+    groups = db.get_existing_groups()
     data = []
     for site in sites:
-        bars = db.get_recent_bars(site["id"], limit=20)
+        bars = db.get_recent_bars(site["id"], limit=24)
+        stats = db.get_site_statistics(site["id"])
         data.append({
             "id": site["id"],
             "name": site["name"],
             "url": site["url"],
             "monitor_type": site["monitor_type"].upper(),
             "check_interval": site["check_interval"],
-            "group_name": site["group_name"],
+            "group_name": site["group_name"] or "",
+            "is_ungrouped": not site["group_name"],
             "notes": site["notes"],
             "last_status": site["last_status"],
             "status_class": site["status_class"],
             "last_checked": site["last_checked"],
             "last_latency": site["last_latency"],
+            "uptime_pct": stats["uptime_pct"],
             "bars": bars
         })
-    return jsonify(data)
+    return jsonify({"sites": data, "groups": groups})
 
 @app.route("/api/site/<int:site_id>")
 def api_site_details(site_id):
@@ -178,14 +184,17 @@ def api_site_details(site_id):
     groups = db.get_existing_groups()
     return jsonify({"site": site, "history": history, "stats": stats, "groups": groups})
 
-@app.route("/api/user/<int:user_id>")
-def api_user_details(user_id):
-    if "user_id" not in session or session.get("role") != "admin":
-        return jsonify({"error": "Unauthorized"}), 401
-    user = db.get_user_by_id(user_id)
-    if not user:
-        return jsonify({"error": "Not found"}), 404
-    return jsonify(user)
+@app.route("/group/update", methods=["POST"])
+def update_group():
+    if "user_id" not in session or session.get("role") == "user":
+        return redirect(url_for("login"))
+    old_name = request.form.get("old_name", "").strip()
+    new_name = request.form.get("new_name", "").strip()
+    description = request.form.get("description", "").strip()
+    monitor_ids = request.form.getlist("monitor_ids")
+    
+    db.update_group_db(old_name, new_name, description, [int(m) for m in monitor_ids])
+    return redirect(url_for("home"))
 
 @app.route("/add", methods=["POST"])
 def add_site():
@@ -223,7 +232,6 @@ def update_site(site_id):
         db.update_site_db(site_id, name, new_url, monitor_type, interval, group_name, notes)
     return redirect(url_for("home"))
 
-# --- User Management Routes ---
 @app.route("/user/add", methods=["POST"])
 def add_user():
     if "user_id" not in session or session.get("role") != "admin": return redirect(url_for("login"))
@@ -252,7 +260,6 @@ def delete_user(user_id):
     db.delete_user_db(user_id)
     return redirect(url_for("home"))
 
-# --- Status Page Management Routes ---
 @app.route("/status-page/add", methods=["POST"])
 def add_status_page():
     if "user_id" not in session or session.get("role") != "admin": return redirect(url_for("login"))
@@ -260,9 +267,11 @@ def add_status_page():
     slug = request.form.get("slug", "").strip().lower().replace(" ", "-")
     description = request.form.get("description", "").strip()
     custom_css = request.form.get("custom_css", "").strip()
+    footer_text = request.form.get("footer_text", "").strip()
+    logo_url = request.form.get("logo_url", "").strip()
     monitor_ids = request.form.getlist("monitor_ids")
     if title and slug:
-        db.add_status_page_db(title, slug, description, custom_css, [int(m) for m in monitor_ids])
+        db.add_status_page_db(title, slug, description, custom_css, footer_text, logo_url, [int(m) for m in monitor_ids])
     return redirect(url_for("home"))
 
 @app.route("/status-page/update/<int:page_id>", methods=["POST"])
@@ -271,9 +280,11 @@ def update_status_page(page_id):
     title = request.form.get("title", "").strip()
     description = request.form.get("description", "").strip()
     custom_css = request.form.get("custom_css", "").strip()
+    footer_text = request.form.get("footer_text", "").strip()
+    logo_url = request.form.get("logo_url", "").strip()
     monitor_ids = request.form.getlist("monitor_ids")
     if title:
-        db.update_status_page_db(page_id, title, description, custom_css, [int(m) for m in monitor_ids])
+        db.update_status_page_db(page_id, title, description, custom_css, footer_text, logo_url, [int(m) for m in monitor_ids])
     return redirect(request.referrer or url_for("home"))
 
 @app.route("/status-page/delete/<int:page_id>")
